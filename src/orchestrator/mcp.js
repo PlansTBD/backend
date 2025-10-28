@@ -1,44 +1,41 @@
 import { geminiService } from "../services/geminiService.js";
-import { foursquareService } from "../services/foursquare.js";
-import { yelpService } from "../services/yelp.js";
-import { eventbriteService } from "../services/eventbrite.js";
-import { supabase } from "../db/supabaseClient.js";
+import { rankItems } from "../utils/ranking.js";
 
-export async function mcpOrchestrator(query) {
-  const interpretation = await geminiService.interpret(query);
-  const types = interpretation.types || [];
-  const mood = interpretation.mood || "";
+export async function mcpOrchestrator(query, city = "Milan") {
+  try {
+    // In futuro potrai aggiungere altre sorgenti qui
+    const sources = [
+      { name: "gemini", fn: geminiService.structuredPlaces }
+    ];
 
-  console.log(interpretation)
+    const allResults = await Promise.all(
+      sources.map(async s => {
+        const data = await s.fn(query, city);
+        return data.map((item, i) => ({
+          id: `${s.name}-${i}`,
+          source: s.name,
+          city,
+          query,
+          ...item
+        }));
+      })
+    );
 
-  const [fsResults, yelpResults, eventResults] = await Promise.all([
-    foursquareService.search(types, mood),
-    yelpService.search(types, mood),
-    eventbriteService.search(types, mood),
-  ]);
+    // Flatten results
+    const items = allResults.flat();
 
-  const { data: internalResults } = await supabase
-    .from("experiences")
-    .select("*")
-    .ilike("type", `%${types.join(",")}%`)
-    .limit(10);
+    const rankedItems = rankItems(allResults.flat());
 
-  const allResults = [
-    ...(internalResults ?? []).map(r => ({
-      id: `db-${r.id}`,
-      title: r.title,
-      type: r.type,
-      description: r.desc,
-      location: r.location,
-      lat: r.lat,
-      lng: r.lng,
-      image: r.image
-    })),
-    ...fsResults,
-    ...yelpResults,
-    ...eventResults,
-  ];
+    return {
+      query,
+      city,
+      rankedItems,
+      count: items.length,
+      timestamp: new Date().toISOString(),
+    };
 
-  return allResults;
+  } catch (err) {
+    console.error("[mcpOrchestrator] error:", err);
+    return { city, query, items: [], error: err.message };
+  }
 }
-
