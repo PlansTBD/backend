@@ -3,40 +3,33 @@ import { mcpOrchestrator } from "../orchestrator/mcp.js";
 
 const router = express.Router();
 
+/**
+ * Restituisce eventi principali per una città (oggi e settimana)
+ */
 router.get("/", async (req, res) => {
-  const city = req.query.city || "Milan";
+  //const city = req.query.city || "New York";
+  const city = "New York";
 
   try {
-    // esegui tutte e 3 le orchestrazioni in parallelo
-    const [venuesResult, restaurantsResult, barsResult] = await Promise.all([
-      mcpOrchestrator(`I 20 migliori locali a ${city}`, city).catch(() => null),
-      mcpOrchestrator(`I 20 migliori ristoranti a ${city}`, city).catch(() => null),
-      mcpOrchestrator(`I 20 migliori bar a ${city}`, city).catch(() => null),
+    // esegue le due orchestrazioni in parallelo (oggi + settimana)
+    const [todayResult, weekResult] = await Promise.all([
+      mcpOrchestrator(`Eventi di oggi a ${city}`, city),
+      mcpOrchestrator(`Eventi di questa settimana a ${city}`, city),
     ]);
-
-    // fallback in caso di errore o risposta non valida
-    const venues = venuesResult?.rankedItems ?? [];
-    const restaurants = restaurantsResult?.rankedItems ?? [];
-    const bars = barsResult?.rankedItems ?? [];
 
     const response = {
       city,
       timestamp: new Date().toISOString(),
-      sections: {
-        venues: [
-          {
-            title: `Eventi di oggi a ${city}`,
-            items: Array.isArray(venues) ? venues.slice(0, 8) : [],
-          },
-        ],
-        restaurants: [
-          {
-            title: `Eventi della settimana a ${city}`,
-            items: Array.isArray(restaurants) ? restaurants.slice(0, 8) : [],
-          },
-        ],
-        bars: Array.isArray(bars) ? bars.slice(0, 8) : [],
-      },
+      sections: [
+        {
+          title: `Eventi di oggi a ${city}`,
+          items: todayResult.items.slice(0, 10),
+        },
+        {
+          title: `Eventi della settimana a ${city}`,
+          items: weekResult.items.slice(0, 10),
+        },
+      ],
     };
 
     res.json(response);

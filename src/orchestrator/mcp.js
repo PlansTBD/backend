@@ -1,41 +1,43 @@
-import { geminiService } from "../services/geminiService.js";
-import { rankItems } from "../utils/ranking.js";
+import { supabaseService } from "../services/supabase.js";
+import dayjs from "dayjs";
 
-export async function mcpOrchestrator(query, city = "Milan") {
+/**
+ * Recupera eventi da Supabase filtrati per città e periodo.
+ * Supporta "oggi" o "settimana" nel query.
+ */
+export async function mcpOrchestrator(query, city = "New York") {
   try {
-    // In futuro potrai aggiungere altre sorgenti qui
-    const sources = [
-      { name: "gemini", fn: geminiService.structuredPlaces }
-    ];
+    const now = dayjs();
 
-    const allResults = await Promise.all(
-      sources.map(async s => {
-        const data = await s.fn(query, city);
-        return data.map((item, i) => ({
-          id: `${s.name}-${i}`,
-          source: s.name,
-          city,
-          query,
-          ...item
-        }));
-      })
-    );
+    // 🔹 Calcola range temporale
+    let from, to;
+    const q = query.toLowerCase();
 
-    // Flatten results
-    const items = allResults.flat();
+    if (q.includes("oggi")) {
+      from = now.startOf("day").toISOString();
+      to = now.endOf("day").toISOString();
+    } else if (q.includes("settimana")) {
+      from = now.startOf("week").toISOString();
+      to = now.endOf("week").toISOString();
+    }
 
-    const rankedItems = rankItems(allResults.flat());
-
+    // 🔹 Prendi gli eventi da Supabase
+    const events = await supabaseService.getEvents(city, { from, to });
+    console.log(events.length)
     return {
       query,
       city,
-      rankedItems,
-      count: items.length,
+      count: events.length,
+      items: events,
       timestamp: new Date().toISOString(),
     };
-
   } catch (err) {
     console.error("[mcpOrchestrator] error:", err);
-    return { city, query, items: [], error: err.message };
+    return {
+      query,
+      city,
+      items: [],
+      error: err.message,
+    };
   }
 }
